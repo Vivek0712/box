@@ -1,0 +1,21 @@
+flowchart LR
+    subgraph sandbox["Agent OS sandbox"]
+        agent["Agent application"]
+    end
+
+    subgraph trusted["The box's trusted process (outside the agent sandbox)"]
+        proxy["Egress gateway"]
+        monty["Monty for Python"]
+        shell["Strands Shell"]
+        mcp["MCP broker"]
+        policy[["Dogwood Local Engine and event history"]]
+    end
+
+    agent -->|"network requests"| proxy
+    agent -->|"Python code"| monty
+    agent -->|"shell commands"| shell
+    agent -->|"local MCP calls"| mcp
+    proxy -->|"policy checks"| policy
+    monty -->|"policy checks"| policy
+    shell -->|"policy checks"| policy
+    mcp -->|"policy checks"| policy
