@@ -81,7 +81,8 @@ process, outside the agent's sandbox. Strands Shell, Monty, the egress gateway,
 and the MCP broker check operations with the engine before allowing them.
 They also record events that later policy decisions can use.
 
-![The agent application runs inside its OS sandbox. Its network requests, Python code, shell commands, and local MCP calls go to the egress gateway, Monty, Strands Shell, and the MCP broker in the box's trusted process, and each of those makes a policy check with the Dogwood Local Engine and its event history.](docs/design/images/architecture.svg)
+![The agent application runs inside its OS sandbox. Its network requests, Python code, shell commands, and local MCP calls go to the egress gateway, Monty, Strands Shell, and the MCP broker in the box's trusted process, and each of those makes a policy check with the Dogwood Local Engine and its event history.](docs/design/images/architecture-light.svg#gh-light-mode-only)
+![The agent application runs inside its OS sandbox. Its network requests, Python code, shell commands, and local MCP calls go to the egress gateway, Monty, Strands Shell, and the MCP broker in the box's trusted process, and each of those makes a policy check with the Dogwood Local Engine and its event history.](docs/design/images/architecture-dark.svg#gh-dark-mode-only)
 
 When the agent uses a program such as `git` or `cargo`, or a local MCP server,
 Box checks the launch against policy and runs the program in its own sandbox.
