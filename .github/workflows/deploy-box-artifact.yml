@@ -191,22 +191,40 @@ jobs:
     name: Build ${{ matrix.target.triple }}
     needs: scan
     runs-on: ${{ matrix.target.runner }}
+    # An empty container runs the leg on the runner itself.
+    container: ${{ matrix.target.container }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
         target:
-          # Ubuntu 22.04 for a lower baseline glibc. x86_64 builds for
-          # bring-up and is not released. aarch64 builds natively on the arm64
-          # runner, so the leg can run its own binary before it is released.
+          # x86_64 builds on Ubuntu 22.04 for bring-up and is not released.
+          # aarch64 builds natively on the arm64 runner inside amazonlinux:2023,
+          # so the released binary needs glibc 2.34 at most and starts on
+          # Amazon Linux 2023 (Lambda MicroVMs, most Graviton hosts); built on
+          # Ubuntu 22.04 it needs GLIBC_2.35. The native build also lets the
+          # leg run its own binary before it is released.
           - triple: x86_64-unknown-linux-gnu
             runner: ubuntu-22.04
+            container: ''
           - triple: aarch64-unknown-linux-gnu
             runner: ubuntu-22.04-arm
+            container: amazonlinux:2023
           - triple: aarch64-apple-darwin
             runner: macos-latest
+            container: ''
     steps:
+      - name: Prepare the amazonlinux:2023 build container
+        # The image carries no compiler, git, or tar; rustup then installs the
+        # toolchain rust-toolchain.toml pins, as it does on the hosted runners.
+        if: matrix.target.container != ''
+        run: |
+          set -euo pipefail
+          dnf install -y -q git tar gzip gcc gcc-c++ make clang perl cmake findutils
+          curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
       - name: Checkout code
         uses: actions/checkout@v7
         with:
@@ -259,9 +277,9 @@ jobs:
           tar -tzf "dist/${asset}"
 
       - name: Assert the packaged binary reports the stamped version
-        # Each leg stamps its own crates, so the released leg checks its own binary.
-        # Every released leg runs on its own architecture, so each checks its
-        # own binary. x86_64 Linux is not released and is not checked.
+        # Each leg stamps its own crates, and every released leg runs on its own
+        # architecture, so each checks its own binary. x86_64 Linux is not
+        # released and is not checked.
         if: matrix.target.triple != 'x86_64-unknown-linux-gnu'
         env:
           VERSION: ${{ inputs.version }}
@@ -460,7 +478,7 @@ jobs:
 
           ## Assets
 
-          \`box-${NEW_TAG}-aarch64-apple-darwin.tar.gz\` and \`box-${NEW_TAG}-aarch64-unknown-linux-gnu.tar.gz\` each unpack to the \`./box-core\` layout: \`box\` beside its helper binaries. The Linux tarball is a preview, built against glibc on Ubuntu 22.04; its namespace launcher needs unprivileged user namespaces and a fresh \`/proc\` mount, which a default container refuses. \`SHA256SUMS.txt\` is the aggregate checksum file the downloader verifies against.
+          \`box-${NEW_TAG}-aarch64-apple-darwin.tar.gz\` and \`box-${NEW_TAG}-aarch64-unknown-linux-gnu.tar.gz\` each unpack to the \`./box-core\` layout: \`box\` beside its helper binaries. The Linux tarball is a preview, built in amazonlinux:2023 against glibc 2.34; its namespace launcher needs unprivileged user namespaces and a fresh \`/proc\` mount, which a default container refuses. \`SHA256SUMS.txt\` is the aggregate checksum file the downloader verifies against.
           EOF
 
       - name: Tag the pinned SHA
