@@ -47,6 +47,8 @@ actions and elapsed time to decide what is allowed next. For example, a file rea
 through Shell or Python can cause the gateway to deny a later outbound HTTP request.
 
 **Preview:** Box currently supports local execution on macOS with Apple silicon.
+A Linux aarch64 build ships alongside it as a preview: the namespace launcher needs
+unprivileged user namespaces and a fresh `/proc` mount, which a default container refuses.
 We welcome feedback through [GitHub issues](https://github.com/strands-agents/box/issues).
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a change.
 

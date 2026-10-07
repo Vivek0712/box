@@ -1,9 +1,11 @@
 #!/bin/sh
 # Box release downloader.
 #
-# Downloads the prebuilt box tarball for macOS on Apple silicon from the
-# strands-agents/box GitHub Release, verifies it against SHA256SUMS.txt, and
-# unpacks its files into a local directory (./box-core by default).
+# Downloads the prebuilt box tarball for this host from the strands-agents/box
+# GitHub Release, verifies it against SHA256SUMS.txt, and unpacks its files into
+# a local directory (./box-core by default). Two hosts have a tarball: macOS on
+# Apple silicon, and Linux (glibc) on aarch64, a preview whose namespace
+# launcher needs unprivileged user namespaces and a fresh /proc mount.
 #
 # It does not install anything: nothing is copied to a system directory, your
 # PATH is not changed, and no shell startup file is edited. To run the box,
@@ -29,15 +31,15 @@ need() { command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 
 host_os="$(uname -s)"
 host_arch="$(uname -m)"
-case "$host_os" in
-    Darwin) ;;
-    *) die "unsupported OS: $host_os. Box supports macOS on Apple silicon." ;;
-esac
 case "$host_arch" in
     arm64|aarch64) ;;
-    *) die "unsupported architecture: $host_arch. Box supports macOS on Apple silicon." ;;
+    *) die "unsupported architecture: $host_arch. Box supports macOS on Apple silicon and Linux on aarch64." ;;
 esac
-triple="aarch64-apple-darwin"
+case "$host_os" in
+    Darwin) triple="aarch64-apple-darwin" ;;
+    Linux) triple="aarch64-unknown-linux-gnu" ;;
+    *) die "unsupported OS: $host_os. Box supports macOS on Apple silicon and Linux on aarch64." ;;
+esac
 
 if command -v curl >/dev/null 2>&1; then
     fetch() { curl -fsSL "$1" -o "$2"; }
