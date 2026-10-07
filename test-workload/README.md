@@ -59,16 +59,17 @@ Each dimension directory holds five files, and a two-run dimension a sixth, `goa
 | `workload-agent-a.sh`, `workload-agent-b.sh` | The two drivers every dimension's wrappers call. |
 | `workload-oracle-lib.sh`, `journal_find.py` | The verdict library and the decision-journal reader. |
 | `workload-run-validity.sh` | The gate that decides whether an agent made a tool call at all. |
+| `jailbreak-run-validity.sh` | The `network-egress` gate: a tool call, a command the box ran, and the method report. |
 | `workload-strands-agent.py` | The Strands agent. |
-| `workload-run-validity-test.sh`, `workload-strands-agent-test.py`, `workload-two-run-test.sh` | Tests that run on your own host. See "Checks you can run here". |
+| `workload-run-validity-test.sh`, `jailbreak-run-validity-test.sh`, `workload-strands-agent-test.py`, `workload-two-run-test.sh` | Tests that run on your own host. See "Checks you can run here". |
 
 **Agent B is not a model call.** It reads the artefacts and applies the dimension's rules. A model
 must not grade its own run.
 
 `network-egress/` is an older dimension of a different kind: an adversarial probe with four files
 and no `case.sh`. It runs through `common/bootstrap.sh` with `common/oracle-lib.sh`,
-`common/agent-a-runner.sh`, `common/agent-b-runner.sh`, and `common/box-config.toml`, not through
-`workload-bootstrap.sh`. `common/lib.sh` serves only the `manual/` drivers.
+`common/agent-a-runner.sh`, `common/box-config.toml`, and the `jailbreak-verdict` rule in
+`verdict/`, not through `workload-bootstrap.sh`. `common/lib.sh` serves only the `manual/` drivers.
 
 ## How one cell runs
 
@@ -176,19 +177,20 @@ workspace and the box directory on the instance before it uploads the pair.
 
 | Script | What it does |
 |---|---|
-| `manual/setup.sh` | Provision, install, and optionally run, for one platform or both. |
+| `manual/setup.sh` | Provision, install, and with `--run` run `$CASE` (default `network-egress`) through `run-harness.sh`, for one platform or both. Exits non-zero unless every verdict is `PASS`. |
 | `manual/<platform>/provision.sh` | Launch an instance. The macOS one allocates a Dedicated Host first. |
 | `manual/<platform>/install.sh` | Upload the source tarball, build the box, install the agent. |
-| `manual/macos/run-harness.sh` | Ship this directory to the instance and run `common/bootstrap.sh` there. |
-| `manual/<platform>/run-jailbreak.sh` | Run the probe prompt against a built box. |
+| `manual/<platform>/run-harness.sh` | Ship this directory to the instance, run `common/bootstrap.sh` there, and fetch the verdict into `run-reports/<platform>/<case>/`. Exits 0 only on `PASS`. |
+| `manual/<platform>/run-jailbreak.sh` | A smoke probe: eight fixed commands the agent grades itself. Not a containment result. |
 | `manual/teardown.sh` | Stop the instances, or terminate them and release the host. |
 
 ## Checks you can run here
 
-Three tests need no instance, no box, and no model:
+Four tests need no instance, no box, and no model:
 
 ```sh
 bash test-workload/common/workload-run-validity-test.sh
+bash test-workload/common/jailbreak-run-validity-test.sh
 python3 test-workload/common/workload-strands-agent-test.py
 bash test-workload/common/workload-two-run-test.sh
 ```
@@ -317,7 +319,8 @@ rule reports containment that was never measured.
 2. **Most scripts in `common/` are mode 644, and the suite depends on no mode bit there.** Each one
    is `source`d, or it is started as `bash <path>` or `python3 <path>`. The exceptions are the probe
    harness scripts (`bootstrap.sh`, `lib.sh`, `oracle-lib.sh`, the two runners),
-   `workload-run-validity.sh`, `workload-run-validity-test.sh`, `workload-two-run-test.sh`, and
+   `workload-run-validity.sh`, `workload-run-validity-test.sh`, `jailbreak-run-validity.sh`,
+   `jailbreak-run-validity-test.sh`, `workload-two-run-test.sh`, and
    `workload-strands-agent.py`, which are 755. In a dimension directory, only `agent-a.sh`,
    `agent-b.sh`, and `oracle.sh` are mode 755. `case.sh` is 644, because a dimension script
    `source`s it. The `manual/` drivers are 755, because an operator starts them by name.

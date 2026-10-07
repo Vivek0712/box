@@ -130,4 +130,4 @@ rm -f "$BOX_TOML" "$BOX_POLICY"
 
 echo ""
 echo "=== macOS instance $INSTANCE_ID ready ==="
-echo "Next: ./macos/run-jailbreak.sh $INSTANCE_ID"
+echo "Next: ./macos/run-harness.sh $INSTANCE_ID [case]"

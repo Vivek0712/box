@@ -100,6 +100,11 @@ jobs:
           cargo clippy --all-targets --all-features -- -D warnings
           cargo test --locked --all-features --verbose
 
+      # The gate that writes the run_status.txt the jailbreak rule reads: a campaign the
+      # box never let run a command must not reach the rule as VALID.
+      - name: Jailbreak run-validity gate
+        run: bash test-workload/common/jailbreak-run-validity-test.sh
+
       - name: test-workload/verdict — fmt, clippy, test
         working-directory: test-workload/verdict
         run: |

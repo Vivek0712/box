@@ -279,3 +279,72 @@ when { context.input.path == "/dev/null" };
 open(out, "w").write(s)
 PYEOF
 }
+
+# run_harness <platform> <instance-id> <user> <case> — run one case through the
+# on-instance bootstrap (oracle, Agent A, Agent B, upload), fetch what it uploaded
+# into $REPORT_DIR/<platform>/<case>/, and return 0 only when its verdict is PASS.
+#
+# This is the harness the pipeline runs, not the eight-command smoke prompt in
+# run-jailbreak.sh: the agent attacks against the case's goal.md, and the verdict
+# comes from the host oracle and the verdict rule, never from the agent's own
+# account. A missing or unreadable verdict is a failure, never a pass.
+run_harness() {
+  local platform="$1" instance_id="$2" user="$3" case="$4"
+  require_inputs ARTIFACTS_BUCKET || return 1
+  local run_id="${RUN_ID:-manual-$(date -u +%Y%m%dT%H%M%SZ)}"
+  local out="$REPORT_DIR/$platform/$case" home commit tarball rc profile
+  mkdir -p "$out" || return 1
+
+  home=$(ssh_to "$instance_id" "$user" 'cd ~ && pwd -P' | tr -d '\r' | tail -n 1)
+  case "$home" in
+    /*) ;;
+    *) echo "ERROR: $instance_id did not report an absolute home (got '${home}')" >&2; return 1 ;;
+  esac
+  # The bootstrap keys its upload by the COMMIT stamp in the box source when there is
+  # one (pack_source writes it) and by BOX_COMMIT otherwise; resolve it the same way.
+  commit=$(ssh_to "$instance_id" "$user" 'cat ~/strands-box/COMMIT 2>/dev/null' | tr -d '\r[:space:]')
+  commit="${commit:-${BOX_COMMIT:-unknown}}"
+  echo "=== $platform / $case — run $run_id, box $commit ==="
+
+  # Ship the harness with the policy fixture beside it: the bootstrap reads
+  # test-integ/src/fixture.dw as a sibling of test-workload/.
+  tarball=$(mktemp)
+  tar czf "$tarball" -C "$PKG_DIR/.." --exclude='run-reports' --exclude='target' \
+    test-workload test-integ/src/fixture.dw || { rm -f "$tarball"; return 1; }
+  ssh_to "$instance_id" "$user" "rm -rf '$home/indet-harness' && mkdir -p '$home/indet-harness'"
+  scp_to "$instance_id" "$user" "$tarball" "$home/indet-harness/harness.tgz"
+  rm -f "$tarball"
+  ssh_to "$instance_id" "$user" "tar xzf '$home/indet-harness/harness.tgz' -C '$home/indet-harness'"
+
+  # Root, because the oracle captures packets and reads every process's sockets. HOME
+  # stays the operator's, so the bootstrap reuses the box install.sh built there
+  # rather than fetching a source from S3, and PATH is the login one that carries
+  # the agent install.sh landed.
+  if [ "$platform" = macos ]; then profile="$home/.zprofile"; else profile="$home/.bashrc"; fi
+  ssh_to "$instance_id" "$user" ". '$profile' >/dev/null 2>&1; sudo env PATH=\"\$PATH\" HOME=\"$home\" \
+      LEDGER_BUCKET='$ARTIFACTS_BUCKET' BOX_COMMIT='$commit' RUN_ID='$run_id' CASE='$case' \
+      PLATFORM='$platform' AWS_REGION='$AWS_REGION' WL_SRC_DIR=\"$home/strands-box\" \
+      bash '$home/indet-harness/test-workload/common/bootstrap.sh'" 2>&1 | tee "$out/run.log" || true
+
+  aws s3 cp --recursive --only-show-errors --region "$AWS_REGION" \
+    "s3://$ARTIFACTS_BUCKET/reports/$commit/$run_id/indeterministic/$platform/$case/" "$out/" \
+    || echo "WARN: could not fetch the run's artefacts from s3://$ARTIFACTS_BUCKET" >&2
+
+  python3 - "$out/verdict.json" "$platform" "$case" <<'PYEOF'
+import json, sys
+path, platform, case = sys.argv[1:4]
+try:
+    v = json.load(open(path))
+except (OSError, ValueError) as why:
+    print("%s / %s: no readable verdict (%s) — FAIL" % (platform, case, why))
+    sys.exit(1)
+verdict = v.get("verdict", "?")
+print("%s / %s: %s" % (platform, case, verdict))
+for key in ("security_outcome", "run_status", "note", "residuals", "reasons", "counts"):
+    if v.get(key) not in (None, "", []):
+        print("  %s: %s" % (key, v[key]))
+sys.exit(0 if verdict == "PASS" else 1)
+PYEOF
+  rc=$?
+  return "$rc"
+}

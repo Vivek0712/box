@@ -92,6 +92,15 @@ if [ ! -x "$SRC/target/release/strands-box" ]; then
 else
   log "strands-box already built — reusing"
 fi
+# The case's agent-b.sh judges the run with workload-oracle (test-workload/verdict) and
+# refuses to fall back to a score without it, so a box built without it yields no
+# verdict at all. Built separately so a reused box still gets one.
+if [ ! -x "$SRC/target/release/workload-oracle" ]; then
+  # shellcheck disable=SC1091
+  source "$HOME/.cargo/env" 2>/dev/null || true
+  ( cd "$SRC" && cargo build -p workload-verdict --bin workload-oracle --release ) \
+    >>/tmp/box-build.log 2>&1 || log "workload-oracle build FAILED (see /tmp/box-build.log)"
+fi
 # shellcheck disable=SC1091
 source "$HOME/.cargo/env" 2>/dev/null || true
 export PATH="$SRC/target/release:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
@@ -223,6 +232,20 @@ else:
 PYEOF
 fi
 
+# The goal is white-box, but the source tree and the box config sit outside the
+# box's read grant, so the agent could read neither. Copy the crates' sources and
+# this run's config into the workspace, read-only. Source files only: no target/.
+SNAP="$WS/box-src"
+chmod -R u+w "$SNAP" 2>/dev/null; rm -rf "$SNAP"; mkdir -p "$SNAP/config"
+if [ -d "$SRC/crates" ]; then
+  ( cd "$SRC" && find crates -path 'crates/*/src/*' -type f -print | tar cf - -T - ) \
+    | ( cd "$SNAP" && tar xf - ) || log "WARN: copying the box source into the workspace failed"
+fi
+[ -f "$SRC/COMMIT" ] && cp "$SRC/COMMIT" "$SNAP/COMMIT"
+cp "$INDET_BOX_CONFIG" "$POLICY" "$SNAP/config/" 2>/dev/null || log "WARN: copying the box config into the workspace failed"
+chmod -R a-w "$SNAP" 2>/dev/null || true
+log "source snapshot: $(find "$SNAP" -type f | wc -l | tr -d ' ') files under $SNAP"
+
 # 5. Credentials from IMDS -> ~/.aws/credentials (BEFORE oracle; do NOT let the
 #    agent fetch these later — the oracle would see it as forbidden egress).
 log "fetching IMDS credentials before starting oracle..."
@@ -269,6 +292,8 @@ up "$RUN_DIR/oracle/verdict.json"          "oracle-verdict.json"
 up "$RUN_DIR/agent-a.log"                  "agent-a.log"
 up "$RUN_DIR/agent-a/turns.jsonl"          "turns.jsonl"
 up "$RUN_DIR/agent-b/deterministic_checks.json" "deterministic_checks.json"
+up "$RUN_DIR/finding.json"                 "finding.json"
+up "$RUN_DIR/agent-a/coverage.md"          "coverage.md"
 [ -f /tmp/box-build.log ] && "$AWS" s3 cp /tmp/box-build.log "$DEST/box-build.log" >/dev/null 2>&1 || true
 
 # Ensure a verdict.json always exists at the dest (UNCERTAIN placeholder if none).

@@ -5,8 +5,12 @@
 #   ./setup.sh              # Provision + install BOTH platforms
 #   ./setup.sh linux        # Linux only
 #   ./setup.sh macos        # macOS only
-#   ./setup.sh --run        # Provision + install + run jailbreak on both
-#   ./setup.sh linux --run  # Linux only, including jailbreak run
+#   ./setup.sh --run        # Provision + install + run the harness on both
+#   ./setup.sh linux --run  # Linux only, including the harness run
+#
+# --run runs the case named by CASE (default network-egress; `workloads` runs the
+# workload suite) through <platform>/run-harness.sh, and the script exits non-zero
+# unless every platform's verdict is PASS.
 #
 # Prerequisites:
 #   - AWS CLI v2 with credentials on the default chain, or AWS_CREDENTIAL_REFRESH set
@@ -19,7 +23,8 @@
 #   1. Provisions EC2 instances (AL2023 arm64 + mac-m4.metal Dedicated Host)
 #   2. Uploads the strands-box source and builds strands-box on each
 #   3. Installs Claude Code + configures box for Bedrock via aws://default
-#   4. Optionally runs the jailbreak probe
+#   4. Optionally runs the harness: oracle, the agent against the case's goal.md, and
+#      the verdict rule. <platform>/run-jailbreak.sh is a separate smoke probe.
 #
 # Cost:
 #   - Linux: ~$0.07/hr (t4g.large)
@@ -46,6 +51,10 @@ for arg in "$@"; do
     RUN_JAILBREAK=true
   fi
 done
+CASE="${CASE:-network-egress}"
+# One platform's failing verdict must not skip the other's run, so each records its
+# status here and the script exits on it at the end.
+FAILED=""
 
 # Validate source tarball exists
 if [ ! -f "$SOURCE_TARBALL" ]; then
@@ -80,8 +89,8 @@ if [ "$PLATFORM" = "both" ] || [ "$PLATFORM" = "linux" ]; then
   
   if [ "$RUN_JAILBREAK" = "true" ]; then
     echo ""
-    echo "Running jailbreak on Linux..."
-    bash linux/run-jailbreak.sh "$LINUX_ID"
+    echo "Running $CASE on Linux..."
+    bash linux/run-harness.sh "$LINUX_ID" "$CASE" || FAILED="$FAILED linux"
   fi
   echo ""
 fi
@@ -96,8 +105,8 @@ if [ "$PLATFORM" = "both" ] || [ "$PLATFORM" = "macos" ]; then
   
   if [ "$RUN_JAILBREAK" = "true" ]; then
     echo ""
-    echo "Running jailbreak on macOS..."
-    bash macos/run-jailbreak.sh "$MACOS_ID"
+    echo "Running $CASE on macOS..."
+    bash macos/run-harness.sh "$MACOS_ID" "$CASE" || FAILED="$FAILED macos"
   fi
   echo ""
 fi
@@ -106,10 +115,19 @@ echo "╔═══════════════════════�
 echo "║   Setup Complete                                            ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
-echo "Run jailbreaks individually:"
+echo "Run the harness individually:"
+echo "  ./linux/run-harness.sh <instance-id> [case]"
+echo "  ./macos/run-harness.sh <instance-id> [case]"
+echo "Smoke probe (eight fixed commands, self-graded by the agent):"
 echo "  ./linux/run-jailbreak.sh <instance-id> [custom-prompt]"
 echo "  ./macos/run-jailbreak.sh <instance-id> [custom-prompt]"
 echo ""
 echo "Teardown:"
 echo "  ./teardown.sh          # Stop instances"
 echo "  ./teardown.sh --full   # Terminate + release host"
+
+if [ -n "$FAILED" ]; then
+  echo ""
+  echo "Verdict not PASS on:$FAILED (case $CASE). Reports: $REPORT_DIR"
+  exit 1
+fi
