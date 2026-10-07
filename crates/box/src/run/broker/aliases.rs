@@ -27,6 +27,8 @@ pub(crate) fn materialize(
     materialize_from(layout, servers, &installed_image()?, owner)
 }
 
+/// `_owner` is the run lock as a token: `run` takes it before the first call and holds it until
+/// the workload has exited.
 fn materialize_from(
     layout: &BoxRoot,
     servers: &[crate::record::config::mcp::McpServer],

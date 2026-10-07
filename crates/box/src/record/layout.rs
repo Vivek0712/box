@@ -1661,8 +1661,15 @@ fn place_private_image(
     // SAFETY: pending is one valid component and unlinkat uses the retained parent.
     let _ = unsafe { libc::unlinkat(parent.as_raw_fd(), pending.as_ptr(), 0) };
     let mut source = open_without_following(source)?;
-    if clone_image(&source, parent, pending.as_c_str()).is_err() {
-        copy_image(&mut source, parent, pending.as_c_str(), mode)?;
+    if let Err(clone_error) = clone_image(&source, parent, pending.as_c_str()) {
+        // SAFETY: pending is one valid component and unlinkat uses the retained parent.
+        let _ = unsafe { libc::unlinkat(parent.as_raw_fd(), pending.as_ptr(), 0) };
+        copy_image(&mut source, parent, pending.as_c_str(), mode).map_err(|copy_error| {
+            std::io::Error::new(
+                copy_error.kind(),
+                format!("clone failed ({clone_error}), then copy failed: {copy_error}"),
+            )
+        })?;
     }
     let placed = open_child_name(
         parent,
