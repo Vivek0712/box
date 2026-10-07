@@ -100,11 +100,6 @@ jobs:
           cargo clippy --all-targets --all-features -- -D warnings
           cargo test --locked --all-features --verbose
 
-      # The gate that writes the run_status.txt the jailbreak rule reads: a campaign the
-      # box never let run a command must not reach the rule as VALID.
-      - name: Jailbreak run-validity gate
-        run: bash test-workload/common/jailbreak-run-validity-test.sh
-
       - name: test-workload/verdict — fmt, clippy, test
         working-directory: test-workload/verdict
         run: |
@@ -141,3 +136,24 @@ jobs:
             exit 1
           fi
           echo "OK: unproven oracle refused, as designed"
+
+  # The gate that writes the run_status.txt the jailbreak rule reads: a campaign the
+  # box never let run a command must not reach the rule as VALID. Its own job, with no
+  # cache step: it is bash over fixtures and needs no Rust build, and a job that runs
+  # `inputs.ref` code beside a cache step is what CodeQL's
+  # `actions/cache-poisoning/poisonable-step` flags.
+  jailbreak-validity:
+    name: Jailbreak run validity
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Jailbreak run-validity gate
+        run: bash test-workload/common/jailbreak-run-validity-test.sh
